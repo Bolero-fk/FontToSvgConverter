@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>Text to SVG using opentype.js</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/opentype.js/0.7.3/opentype.min.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+</head>
+
+<body>
+    Display Font: <span id="fontNameDisplayArea"></span>
+    <div id="container"></div>
+    <input type="text" id="characterInput" style="width: 2ch;" value="@" maxlength="1" oninput="handleInput()">
+    <button onclick="downloadSvgFile()">download svg</button>
+
+    <script>
+        window.onload = function () {
+            var char = '@';
+            DrawCharacter(char);
+        }
+
+        async function DrawCharacter(char) {
+
+            var fontName = await SelectFont(char);
+            if (fontName == null) {
+                alert('Input Charcter' + char + 'could not be loaded');
+                document.getElementById("characterInput").value = "";
+                return;
+            }
+            document.getElementById("fontNameDisplayArea").innerText = fontName;
+
+            // フォントをローカルにダウンロードし、パスを指定する
+            opentype.load('fonts/' + fontName, function (err, font) {
+                if (err) {
+                    alert('Font could not be loaded: ' + err);
+                } else {
+                    // SVGのnamespaceを設定
+                    var svgNS = "http://www.w3.org/2000/svg";
+
+                    var margin = 10;
+                    var path = font.getPath(char, 0, 0, 72);
+                    var pathWidth = path.getBoundingBox().x2 - path.getBoundingBox().x1;
+                    var pathHeight = path.getBoundingBox().y2 - path.getBoundingBox().y1;
+
+                    var widthOffset = pathHeight > pathWidth ? (pathHeight - pathWidth) / 2 : 0;
+                    var heightOffset = pathWidth > pathHeight ? (pathWidth - pathHeight) / 2 : 0;
+
+                    var left = path.getBoundingBox().x1;
+                    var up = path.getBoundingBox().y2;
+
+                    // パスを作成
+                    path = font.getPath(char, -left + margin + widthOffset, pathHeight - up + margin + heightOffset, 72, { decimalPlaces: 6 }).toSVG();
+                    path = path.replace('/>', ' fill="#1A1A1C"></path>');
+
+                    // SVG要素を作成
+                    var svg = document.createElementNS(svgNS, "svg");
+                    var svgWidth = pathWidth + 2 * (margin + widthOffset);
+                    var svgHeight = pathHeight + 2 * (margin + heightOffset);
+                    svg.setAttribute('width', svgWidth);
+                    svg.setAttribute('height', svgHeight);
+
+                    if (document.getElementById('container').childNodes.length > 0) {
+                        var child = document.getElementById('container').childNodes[0];
+                        document.getElementById('container').removeChild(child);
+                    }
+
+                    document.getElementById('container').appendChild(svg);
+
+                    // SVGにパスデータを追加
+                    svg.innerHTML = path;
+
+                    // Unicodeの値を "U+" の形で表現
+                    var unicodeString = "U+" + char.codePointAt(0).toString(16).toUpperCase().padStart(4, "0");
+
+                    window.svgOutput = '<svg width="' + svgWidth + '" height="' + svgHeight + '" viewBox="0 0 ' + svgWidth + ' ' + svgHeight + '" fill="none" xmlns="http://www.w3.org/2000/svg">' + path + '</svg>';
+                    window.charCodeOutput = unicodeString;
+                }
+            });
+        }
+
+        async function SelectFont(character) {
+
+            var fontFiles = [];
+
+            var url = './fonts/fonts.json';
+
+            $.ajax({
+                url: url,
+                dataType: "json",
+                async: false,
+                success: function (data) {
+                    fontFiles = data;
+                }
+            });
+
+            for (let i = 0; i < fontFiles.length; i++) {
+                var fontHasCharacter = await loadFontAndCheckCharacter(fontFiles[i], character);
+                if (fontHasCharacter) {
+                    return fontFiles[i];
+                }
+            }
+
+            return null;
+        }
+
+        async function loadFontAndCheckCharacter(fontName, character) {
+            return new Promise((resolve, reject) => {
+                opentype.load('fonts/' + fontName, function (err, font) {
+                    if (err) {
+                        reject(err);
+                    } else {
+                        resolve(hasCharacter(font, character));
+                    }
+                });
+            });
+        }
+
+        function hasCharacter(font, character) {
+            return font.encoding.charToGlyphIndex(character) > 0;
+        }
+    </script>
+
+    <script>
+        function handleInput() {
+            var inputBox = document.getElementById("characterInput");
+            var character = inputBox.value.trim(); // 入力された文字を取得して余分なスペースを削除
+
+            // 入力された文字が1文字であればDrawCharacter関数を実行
+            if (character.length === 1) {
+                DrawCharacter(character);
+            }
+        }
+    </script>
+
+    <script>
+        function downloadSvgFile() {
+            var textContent = window.svgOutput; // ダウンロードするテキスト内容を指定
+
+            var blob = new Blob([textContent], { type: 'image/svg+xml' }); // テキスト内容をBlobオブジェクトに変換
+            var url = URL.createObjectURL(blob); // BlobオブジェクトをURLに変換
+
+            var a = document.createElement("a");
+            a.href = url;
+            a.download = window.charCodeOutput + ".svg"; // ダウンロード時のファイル名を指定
+            a.click();
+
+            URL.revokeObjectURL(url); // 不要になったURLを解放
+        }
+    </script>
+
+</body>
+
+</html>
